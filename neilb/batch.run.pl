@@ -59,7 +59,7 @@ The Initial Developer of the Original Code is Research Foundation of State Unive
 
 Portions created by the Initial Developer are Copyright (C) 2007 Research Foundation of State University of New York, on behalf of University at Buffalo. All Rights Reserved.
 
-Contributor(s): Chris Forstall, Xia Lu, Neil Bernstein
+Contributor(s): Chris Forstall
 
 Alternatively, the contents of this file may be used under the terms of either the GNU General Public License Version 2 (the "GPL"), or the GNU Lesser General Public License Version 2.1 (the "LGPL"), in which case the provisions of the GPL or the LGPL are applicable instead of those above. If you wish to allow use of your version of this file only under the terms of either the GPL or the LGPL, and not to allow others to use your version of this file under the terms of the UBPL, indicate your decision by deleting the provisions above and replace them with the notice and other provisions required by the GPL or the LGPL. If you do not delete the provisions above, a recipient may use your version of this file under the terms of any one of the UBPL, the GPL or the LGPL.
 
@@ -68,9 +68,48 @@ Alternatively, the contents of this file may be used under the terms of either t
 use strict;
 use warnings;
 
+# modules necessary to look for config
+
+use Cwd qw/abs_path/;
+use FindBin qw/$Bin/;
+use File::Spec::Functions;
+
+# load configuration file
+
+my $tesslib;
+
+BEGIN {
+	
+	my $dir  = $Bin;
+	my $prev = "";
+			
+	while (-d $dir and $dir ne $prev) {
+
+		my $pointer = catfile($dir, '.tesserae.conf');
+
+		if (-s $pointer) {
+		
+			open (FH, $pointer) or die "can't open $pointer: $!";
+			
+			$tesslib = <FH>;
+			
+			chomp $tesslib;
+			
+			last;
+		}
+		
+		$dir = abs_path(catdir($dir, '..'));
+	}
+	
+	unless ($tesslib) {
+	
+		die "can't find .tesserae.conf!";
+	}
+}
+
 # load Tesserae-specific modules
 
-use lib '/var/www/tesserae/perl';
+use lib $tesslib;
 
 use TessSystemVars;
 use EasyProgressBar;
@@ -84,7 +123,7 @@ use Pod::Usage;
 
 use DBI;
 use File::Temp qw/tempdir/;
-use File::Spec::Functions;
+use Storable;
 
 # initialize some variables
 
@@ -94,6 +133,16 @@ my $parallel = 0;
 my $cleanup  = 0;
 my $parentdir;
 my $dbname;
+
+my @param_names = qw/
+	source
+	target
+	unit
+	feature
+	stop
+	stbasis
+	dist
+	dibasis/;
 
 # get user options
 
@@ -106,7 +155,6 @@ GetOptions(
 	'working=s'  => \$parentdir
 	);
 
-#
 # print usage if the user needs help
 #
 # you could also use perldoc name.pl
@@ -116,7 +164,6 @@ if ($help) {
 	pod2usage(1);
 }
 
-#
 # try to load Parallel::ForkManager
 #  if requested.
 
@@ -144,6 +191,7 @@ if ($parallel) {
 	}
 }
 
+
 #
 # get file to read from command line
 #
@@ -154,17 +202,71 @@ unless ($file) { pod2usage(1) }
 
 my @run = @{parse_file($file)};
 
+
 #
 # create database
 #
 
 my ($datadir, $done) = init_db($dbname, $parentdir);
 
+
+#
+# main loop
+#
+
+my $pr = ProgressBar->new(scalar(@run), $quiet);
+
+for (my $i = 0; $i <= $#run; $i++) {
+
+	$pr->advance();
+	
+	# fork
+	
+	if ($parallel) {
+	
+		$pm->start and next;
+	}
+
+	# modify arguments a little
+	
+	my $cmd = $run[$i];
+	
+	my $bin;
+	
+	$cmd =~ s/--bin\s+(\S+)/"--bin " . ($bin = catfile($datadir, $1))/e;
+	$cmd .= ' --quiet';
+	
+	# run tesserae, note how long it took
+
+	my $time = exec_run($cmd, $datadir);
+	
+	# extract search params, score tallies
+	# from the results files
+	
+	my ($params, $scores) = parse_results($bin);
+	
+	#
+	# connect to database
+	#
+	
+	my $dbh = DBI->connect("dbi:SQLite:dbname=$dbname", "", "");
+	
+	# add records to the database
+	
+	add_scores($dbh, $i, $scores);
+	
+	# add run info
+	
+	add_run($dbh, $i, $params, $time);
+}
+
 #
 # subroutines
 #
 
+#
 # parse the input file
+#
 
 sub parse_file {
 
@@ -185,6 +287,7 @@ sub parse_file {
 	
 	return \@run;
 }
+
 
 #
 # create a new database
@@ -214,7 +317,8 @@ sub init_db {
 			$i = $1 + 1;
 		}
 		
-		$dbname = sprintf("tesbatch.%03i.db", $i); 
+		$dbname = sprintf("tesbatch.%03i.db", $i);
+		$dbname = abs_path(catfile(curdir, $dbname));
 		
 	}
 
@@ -235,10 +339,10 @@ sub init_db {
 	if ($parentdir) { $options{DIR} = $parentdir }
 	
 	my $dir = tempdir(%options);
-
 	
 	return ($dir, $done);
 }
+
 
 # check database tables to see whether
 # an aborted run must be resumed (and where)
@@ -292,4 +396,118 @@ sub check_resume {
 	}
 	
 	return \%done;
+}
+
+
+#
+# extract parameters from string
+#
+
+sub params_from_string {
+
+	my $cmd = shift;
+	my %par;
+	
+	$cmd =~ s/.*read_table.pl\s+//;
+	
+	while ($cmd =~ /--(\S+)\s+([^-]\S*)/g) {
+	
+		$par{$1} = $2;
+	}
+	
+	return \%par;
+}
+
+
+#
+# execute a run, return benchmark data
+#
+
+sub exec_run {
+
+	(my $cmd, $echo) = @_;
+	
+	print STDERR $cmd . "\n" if $echo;
+	
+	my $bmtext = `$cmd`;
+	
+	$bmtext =~ /total>>(\d+)/;
+	
+	return $1;
+}
+
+
+#
+# parse results files
+#
+
+sub parse_results {
+
+	my $bin = shift;
+	
+	# get parameters
+	
+	my $file_meta = catfile($bin, 'match.meta');
+	
+	my %meta = %{retrieve($file_meta)};
+	
+	my @params = @meta{@param_names};
+	
+	# get score tallies
+
+	my @scores;
+	
+	my $file_score = catfile($bin, 'match.score');
+	
+	my %score = ${retrieve($file_score)};
+
+	for my $unit_id_target (keys %score) {
+	
+		for my $unit_id_source (keys %{$score{$unit_id_target}}) {
+		
+			$scores[$score{$unit_id_target}{$unit_id_source}]++;
+		}
+	}
+	
+	return (\@params, \@scores);
+}
+
+#
+# add scores to database
+#
+
+sub add_scores {
+
+	my ($dbh, $i, $scoresref) = @_;
+	
+	my @scores = @$scoresref;
+	
+	my $sth = $dbh->prepare(
+		"insert into scores values($i, ?, ?);"
+	);
+	
+	while (my ($score, $count) = each @scores) {
+	
+		$sth->execute($score, $count);
+	}
+}
+
+
+#
+# add run info to database
+#
+
+sub add_run {
+
+	my ($dbh, $i, $paramsref, $time) = @_;
+	
+	my @params = @$paramsref;
+	
+	my $sth = $dbh->prepare(
+		"insert into runs values ("
+		. join(', ', $i, @params, $time) 
+		. ");"
+	);
+	
+	$sth->execute;
 }
