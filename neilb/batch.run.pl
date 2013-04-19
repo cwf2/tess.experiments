@@ -129,6 +129,7 @@ use Storable;
 
 my $help     = 0;
 my $quiet    = 0;
+my $verbose  = 0;
 my $parallel = 0;
 my $cleanup  = 0;
 my $parentdir;
@@ -152,6 +153,7 @@ GetOptions(
 	'help'       => \$help,	
 	'parallel=i' => \$parallel,
 	'quiet'      => \$quiet,
+	'verbose'    => \$verbose,
 	'working=s'  => \$parentdir
 	);
 
@@ -164,33 +166,19 @@ if ($help) {
 	pod2usage(1);
 }
 
+# if verbose and quiet, verbose wins
+
+$quiet = 0 if $verbose;
+
 # try to load Parallel::ForkManager
 #  if requested.
 
-my $pm;
+($parallel, my $pm) = init_parallel($parallel);
 
-if ($parallel) {
 
-	eval {
+# choose a database name if necessary
 	
-		require Parallel::ForkManager;
-	};
-	
-	if ($@) {
-	
-		print STDERR "can't load Parallel::ForkManager: $@\n";
-		
-		print STDERR "continuing with --parallel 0\n";
-		
-		$parallel = 0;
-	}
-	
-	else {
-	
-		$pm = Parallel::ForkManager->new($parallel);
-	}
-}
-
+$dbname = check_dbname($dbname);
 
 #
 # get file to read from command line
@@ -207,7 +195,7 @@ my @run = @{parse_file($file)};
 # create database
 #
 
-my ($datadir, $done) = init_db($dbname, $parentdir);
+($dbname, my ($datadir, $done)) = init_db($dbname, $parentdir);
 
 
 #
@@ -234,11 +222,11 @@ for (my $i = 0; $i <= $#run; $i++) {
 	my $bin;
 	
 	$cmd =~ s/--bin\s+(\S+)/"--bin " . ($bin = catfile($datadir, $1))/e;
-	$cmd .= ' --quiet';
+	$cmd .= ' --quiet' unless $verbose;
 	
 	# run tesserae, note how long it took
 
-	my $time = exec_run($cmd, $datadir);
+	my $time = exec_run($cmd, $verbose);
 	
 	# extract search params, score tallies
 	# from the results files
@@ -258,11 +246,79 @@ for (my $i = 0; $i <= $#run; $i++) {
 	# add run info
 	
 	add_run($dbh, $i, $params, $time);
+	
+	$pm->finish if $parallel;
 }
+
+$pm->wait_all_children if $parallel;
 
 #
 # subroutines
 #
+
+#
+# initialize parallel processing
+#
+
+sub init_parallel {
+
+	my $parallel = shift;
+	
+	my $pm;
+	
+	if ($parallel) {
+
+		eval {
+		
+			require Parallel::ForkManager;
+		};
+	
+		if ($@) {
+		
+			print STDERR "can't load Parallel::ForkManager: $@\n";
+			
+			print STDERR "continuing with --parallel 0\n";
+			
+			$parallel = 0;
+		}
+	
+		else {
+		
+			$pm = Parallel::ForkManager->new($parallel);
+		}
+	}
+	
+	return ($parallel, $pm);
+}
+
+#
+# choose a database name if none given
+#
+
+sub check_dbname {
+
+	my $dbname = shift;
+
+	unless ($dbname) {
+	
+		opendir (my $dh, curdir) or die "can't read current directory: $!";
+		
+		my @existing = sort (grep {/^tesbatch\.\d+\.db$/} readdir $dh);
+		
+		my $i = 0;
+		
+		if (@existing) {
+		
+			$existing[-1] =~ /\.(\d+)\.db/;
+			$i = $1 + 1;
+		}
+	
+		$dbname = sprintf("tesbatch.%03i.db", $i);
+		$dbname = abs_path(catfile(curdir, $dbname));
+	}
+	
+	return $dbname;
+}
 
 #
 # parse the input file
@@ -280,6 +336,7 @@ sub parse_file {
 	
 	while (my $l = <$fh>) {
 	
+		chomp $l;
 		push @run, $l if $l =~ /[a-z]/i
 	}
 	
@@ -299,28 +356,6 @@ sub init_db {
 
 	my ($dbname, $parentdir) = @_;
 	
-	#
-	# choose a database name if necessary
-	#
-		
-	unless ($dbname) {
-		
-		opendir (my $dh, curdir) or die "can't read current directory: $!";
-		
-		my @existing = sort (grep {/^tesbatch\.\d+\.db$/} readdir $dh);
-		
-		my $i = 0;
-		
-		if (@existing) {
-		
-			$existing[-1] =~ /\.(\d+)\.db/;
-			$i = $1 + 1;
-		}
-		
-		$dbname = sprintf("tesbatch.%03i.db", $i);
-		$dbname = abs_path(catfile(curdir, $dbname));
-		
-	}
 
 	#	
 	# open / create the database file
@@ -338,9 +373,9 @@ sub init_db {
 	my %options = (CLEANUP => $cleanup);
 	if ($parentdir) { $options{DIR} = $parentdir }
 	
-	my $dir = tempdir(%options);
+	my $tempdir = tempdir(%options);
 	
-	return ($dir, $done);
+	return ($dbname, $tempdir, $done);
 }
 
 
@@ -364,28 +399,10 @@ sub check_resume {
 		$exists{$_} = 1;
 	}
 	
-	# if the tables aren't present, no action needed
-	
-	if (not $exists{runs} and not $exists{scores}) {
-	
-	}
-
-	# if only one of the two is present, kill both
-	
-	elsif ($exists{runs} and not $exists{scores}) {
-	
-		my $sth = $dbh->prepare('drop table runs;');
-		$sth->execute;
-	}
-	elsif ($exists{scores} and not $exists{runs}) {
-		my $sth = $dbh->prepare('drop table scores;');
-		$sth->execute;
-	}
-	
-	# if both are present, figure out how much has
-	# already been done
+	# if both tables are present, figure out 
+	# how much has already been done
 		
-	else {
+	if ($exists{runs} and $exists{scores}) {
 		
 		my $sth = $dbh->prepare ('select run_id from runs;');
 		$sth->execute;
@@ -393,6 +410,59 @@ sub check_resume {
 		foreach(@{$sth->fetchall_arrayref()}) {
 			$done{$_} = 1;
 		}
+	}
+
+	# otherwise create them;
+	#   - if only one exists, delete it and start over.
+
+	else {
+		
+		if ($exists{runs}) {
+		
+			my $sth = $dbh->prepare('drop table runs;');
+			$sth->execute;
+		}
+		elsif ($exists{scores}) {
+			my $sth = $dbh->prepare('drop table scores;');
+			$sth->execute;
+		}
+	
+		my $sth;
+		my $cols;
+		
+		# create table runs
+		
+		$cols = join(', ', 
+			'run_id  int',
+			'source  varchar(80)',
+			'target  varchar(80)',
+			'unit    char(6)',
+			'feature char(4)',
+			'stop    int',
+			'stbasis char(7)',
+			'dist    int',
+			'dibasis char(11)',
+			'time    int');
+
+		$sth = $dbh->prepare(
+			"create table runs ($cols);"
+		);
+		
+		$sth->execute;
+		
+		# create table scores
+		
+		$cols = join(', ', 
+			'run_id int',
+			'score  int',
+			'count  int'
+		);	
+	
+		$sth = $dbh->prepare(
+			"create table scores ($cols);"
+		);	
+		
+		$sth->execute;
 	}
 	
 	return \%done;
@@ -425,7 +495,7 @@ sub params_from_string {
 
 sub exec_run {
 
-	(my $cmd, $echo) = @_;
+	my ($cmd, $echo) = @_;
 	
 	print STDERR $cmd . "\n" if $echo;
 	
@@ -451,7 +521,7 @@ sub parse_results {
 	
 	my %meta = %{retrieve($file_meta)};
 	
-	my @params = @meta{@param_names};
+	my @params = @meta{map {uc($_)} @param_names};
 	
 	# get score tallies
 
@@ -459,7 +529,7 @@ sub parse_results {
 	
 	my $file_score = catfile($bin, 'match.score');
 	
-	my %score = ${retrieve($file_score)};
+	my %score = %{retrieve($file_score)};
 
 	for my $unit_id_target (keys %score) {
 	
@@ -488,7 +558,7 @@ sub add_scores {
 	
 	while (my ($score, $count) = each @scores) {
 	
-		$sth->execute($score, $count);
+		$sth->execute($score, ($count || 0));
 	}
 }
 
@@ -503,11 +573,23 @@ sub add_run {
 	
 	my @params = @$paramsref;
 	
-	my $sth = $dbh->prepare(
-		"insert into runs values ("
-		. join(', ', $i, @params, $time) 
-		. ");"
-	);
+	my $values = join(', ', add_quotes(
+		$i, 
+		@params, 
+		$time
+	));
+		
+	my $sth = $dbh->prepare("insert into runs values ($values);");
 	
 	$sth->execute;
+}
+
+sub add_quotes {
+
+	for (@_) {
+	
+		$_ = "'$_'" if /[a-z]/i;
+	}
+	
+	return @_;
 }
