@@ -11,101 +11,42 @@ batch.prepare.pl - prepare a systematic set of tesserae searches
 
 =head1 SYNOPSIS
 
-batch.prepare.pl [options]
+batch.prepare.pl --outfile FILE [options] [tessoptions]
 
 =head1 DESCRIPTION
 
-This script accepts tesserae search parameters specifying multiple values per parameter.
-It then generates every combination of these parameters and spits them out in a list.
-The idea is that you would then feed this list into batch.run.pl, which would run the
-searches.
+This script accepts Tesserae search parameters specifying multiple values per parameter.
+It then generates every combination of these parameters and writes to a file a list
+of individual Tesserae searches to be performed. The idea is that you would then feed 
+this list into batch.run.pl, which would run the searches, although if you really wanted 
+to you could also run the output file as a shell script.
+
+The simplest way to use this script is to specify Tesserae search options just as for
+read_table.pl; Here, unlike with read_table.pl, you can specify multiple values. 
 
 =head1 OPTIONS AND ARGUMENTS
 
-=head2 Command-line mode (default)
-
-The simplest way to use this script is to specify search parameters just as for
-read_table.pl, namely:
-
 =over
 
-=item B<--source>
+=item B<--outfile> I<FILE>
 
-the source text
-
-=item B<--target>
-
-the target text
-
-=item B<--unit>
-
-unit to search: "line" or "phrase"
-
-=item B<--feature>
-
-feature to search on: "word", "stem", "syn", or "3gr"
-
-=item B<--stop>
-
-number of stop words
-
-=item B<--stbasis>
-
-stoplist basis: "corpus", "source", "target", or "both"
-
-=item B<--dist>
-
-max distance (in words) between matching words
-
-=item B<--dibasis>
-
-metric used to calculate distance: "freq", "freq-target", "freq-source", "span", 
-"span-target", or "span-source"
-
-=back
-
-But here, unlike with read_table.pl, you can specify multiple values.  This can be done in
-a couple of ways.  First, you can separate different values with a comma (but no space).
-Second, for names of texts only, you can use the wildcard character '*' to match several
-names at once.  Third, for numeric parameters only, you can specify a range by giving the
-start and end values separated by a dash (but no space); optionally, you can append a 
-"step" value, separated from the range by a colon (but no space), e.g. '1-10' or 
-'10-20:2'. The default step is 1.
-
-=head2 Other modes
-
-=over
-
-=item B<--interactive>
-
-This flag initiates "interactive" mode.  The script will ask you what values or ranges 
-you want for each of the available parameters.  Still under construction.
-
-=item B<--file> I<FILE>
-
-This will attempt to read parameters from a separate text file.  The file should be
-arranged as follows.  Values for a given search parameter should be grouped together,
-one per line, under a header in square brackets giving the name of the parameter.
-Text names can use the wildcard as above.  Numeric ranges can be specified as above,
-and in this case whitespace around the "-" or ":" chars is okay.  Alternately, you can
-specify a range verbosely using one of the forms
-	range(from=I; to=J)
-or
-	range(from=I; to=J; step=K)
-where I, J, and K are integers.
-
-
-=back
-
-=head2 General options
-
-=over
+The destination for output.
 	
 =item B<--parallel> I<N>
 
 Allow I<N> processes to run simultaneously.  Since this script doesn't run the search,
 this won't really do anything, but it can be used to calculate a more accurate ETA for 
 your results.
+
+=item B<--interactive>
+
+This flag initiates "interactive" mode.  The script will ask you what values or ranges 
+you want for each of the available parameters.
+
+=item B<--infile> I<FILE>
+
+This will attempt to read parameters from FILE.  Use '--man' to read about the format 
+of this file.
 
 =item B<--quiet>
 
@@ -115,49 +56,116 @@ Less output to STDERR.
 
 Print usage and exit.
 
+=item B<--man>
+
+Display detailed help.
+
 =back
 
-To see some examples, try running 'perldoc batch.prepare.pl'.
+=head1 TESSERAE SEARCH OPTIONS
 
-=head1 EXAMPLES
+Aside from parsing out lists and ranges, the script simply passes these on to Tesserae's
+read_table.pl.
 
-Examples of command-line options:
+=over
 
-  batch.prepare.pl  --target lucan.bellum_civile,statius.thebaid   \
-                    --source vergil.aeneid.part.*                  \
-                    --stop 5-10                                    \
-                    --dist 4-20:4
+=item B<--source> I<SOURCE>
 
-Sample file for B<--batch> mode:
+the source text
+
+=item B<--target> I<TARGET>
+
+the target text
+
+=item B<--unit> I<UNIT>
+
+unit to search: "line" or "phrase"
+
+=item B<--feature> I<FEAT>
+
+feature to search on: "word", "stem", "syn", or "3gr"
+
+=item B<--stop> I<N>
+
+number of stop words
+
+=item B<--stbasis> I<STBASIS>
+
+stoplist basis: "corpus", "source", "target", or "both"
+
+=item B<--dist> I<D>
+
+max distance (in words) between matching words
+
+=item B<--dibasis> I<DIBASIS>
+
+metric used to calculate distance: "freq", "freq-target", "freq-source", "span", 
+"span-target", or "span-source"
+
+=back
+
+=head1 SPECIFYING MULTIPLE VALUES
+
+This can be done in a couple of ways.  First, you can separate different values with commas.
+When entering options at the command-line, no whitespace is allowed, but using an input 
+file or interactive mode whitespace is allowed.  Second, for names of texts only, 
+you can use the wildcard character '*' to match several names at once.  Third, for 
+numeric parameters only, you can specify a range by giving the start and end values 
+separated by a dash (but no space); optionally, you can append a "step" value, separated 
+from the range by a colon (but no space), e.g. '1-10' or '10-20:2'. The default step is 1.
+
+=head2 EXAMPLE
+
+  batch.prepare.pl --outfile my.list.txt                          \
+                   --target  lucan.bellum_civile,statius.thebaid  \
+                   --source  vergil.aeneid.part.*                 \
+                   --stop    5-10                                 \
+                   --dist    4-20:4
+
+=head1 INPUT FILE FORMAT
+
+It may be easier to lay out the various options in a separate file, from which
+batch.prepare.pl can read using the I<--infile> flag.  
+
+The file should be arranged as follows.  Values for a given search parameter should be 
+grouped together, one per line, under a header in square brackets giving the name of the 
+parameter. Text names can use the wildcard as above.  Numeric ranges can be specified as 
+above, and in this case whitespace around the "-" or ":" chars is okay.  Alternately, 
+you can specify a range verbosely using one of the forms
+
+	range(from=I; to=J)
+
+or
+
+	range(from=I; to=J; step=K)
+
+where I, J, and K are integers.
+
+=head2 SAMPLE INPUT FILE
 
   # my batch file
-  # -- comments beginning with '#' are ignored
+  # -- comments beginning with a hash sign are ignored
 
   [source]
-  vergil.aeneid.part.*
+  vergil.aeneid.part.*          # wildcard
 	
   [target]
-  lucan.bellum_civile.part.*
+  lucan.bellum_civile.part.*    # multiple values on separate lines
   statius.thebaid.part.*
   silius_italicus.punica.part.*
 
   [stop]
-  10 - 20 : 5		# range can have spaces
+  10 - 20 : 5                   # range can have spaces
 
   [stbasis]
-  both			# single values work too
+  both                          # single values work too
 	
   [dist]
-  range(from=8; to=16; step=4)  # verbose range
-
+  range(from=8; to=16; step=4)  # verbose-style range
 
 =head1 KNOWN BUGS
 
-"Interactive" mode doesn't work yet for setting anything other than source and target.
-
-I don't think --quiet does anything right now.
-
-Nothing has really been tested much.
+None, but nothing has really been tested much.
 
 =head1 SEE ALSO
 
@@ -264,8 +272,10 @@ my @params = qw/
 my $interactive = 0;
 my $parallel    = 0;
 my $quiet       = 0;
-my $file_batch;
+my $file_input;
+my $file_output;
 my $help;
+my $man;
 
 my %par;
 my %opt;
@@ -279,25 +289,29 @@ for (@params) {
 }
 
 GetOptions(%opt,
-		'parallel=i'  => \$parallel,
 		'help'        => \$help,
 		'interactive' => \$interactive,
-		'file=s'      => \$file_batch
+		'infile=s'    => \$file_input,
+		'man'         => \$man,
+		'outfile=s'   => \$file_output,
+		'parallel=i'  => \$parallel,
+		'quiet'       => \$quiet
 	);
 	
-if    ($help)        { pod2usage(1) }
+if    ($help)        { pod2usage(-verbose => 1) }
+if    ($man)         { pod2usage(-verbose => 2) }
 
-if    ($file_batch)  { parse_file($file_batch) }
+if    ($file_input)  { parse_file($file_input) }
 
 elsif ($interactive) { interactive() }
 
-unless ($par{source} and $par{target}) {
+unless ($par{source} and $par{target} and $file_output) {
 
 	print STDERR "Source or target unspecified.  Try using --interactive.\n";
 	exit;
 }
 
-# parse user input for ranges, multi values
+# parse user input for ranges, lists
 
 parse_params();
 
@@ -344,18 +358,24 @@ for my $pname (@params) {
 
 my $n = scalar @combi; 
 
-print STDERR "Generates $n combinations.\n";
-print STDERR "If each run takes 10 seconds, this batch will take ";
-print STDERR parse_time($n * 10) . "\n";
+unless ($quiet) {
+	print STDERR "Generates $n combinations.\n";
+	print STDERR "If each run takes 10 seconds, this batch will take ";
+	print STDERR $n ? 
+				parse_time($n * 10) . ".\n"
+				: "no time at all!\n";
 
-if ($parallel) {
-
-	print STDERR "With parallel processing, it could take as little as ";
-	print STDERR parse_time($n * 10 / $parallel) . "\n";
+	if ($parallel and $n) {
+	
+		print STDERR "With parallel processing, it could take as little as ";
+		print STDERR parse_time($n * 10 / $parallel) . "\n";
+	}
 }
 
 my $maxlen = length($#combi);
 my $format = "%0${maxlen}i";
+
+open (my $fh, ">:utf8", $file_output) or die "can't write to $file_output: $!";
 
 for (my $i = 0; $i <= $#combi; $i++) {
 
@@ -363,7 +383,7 @@ for (my $i = 0; $i <= $#combi; $i++) {
 	
 	push @opt, ('--bin' => sprintf($format, $i));
 	
-	print join(" ",	catfile($fs_cgi, "read_table.pl"), @opt) . "\n";
+	print $fh join(" ",	catfile($fs_cgi, "read_table.pl"), @opt) . "\n";
 }
 
 
@@ -452,7 +472,9 @@ sub get_all_texts {
 	push @texts, (grep {!/^\./ and -d catdir($dir, $_)} readdir DH);
 
 	closedir (DH);
-		
+	
+	@texts = sort {text_sort($a,$b)} @texts;
+	
 	return \@texts;
 }
 
@@ -520,60 +542,220 @@ sub parse_time {
 sub interactive {
 
 	#
+	# custom help for each parameter
+	#
+	
+	my $all_texts = get_all_texts($lang);
+	
+	for (@$all_texts) {
+	
+		if (/\.part\./) {
+		
+			$_ = "  " . $_;
+		}
+	}
+	
+	my %help = (
+		source	=> 
+			"Source means the older, alluded-to text.\n"
+			. "You may enter a single text or a comma-separated list; "
+			. "you can also match multiple texts by using the wildcard '*'.\n"
+			. "\n"
+			. "For example:\n"
+			. "   vergil.aeneid.part.*\n"
+			. "will match all books of the Aeneid.\n"
+			. "\n"
+			. "Type 'choices' to see a list of all texts in the corpus\n",
+			
+		target =>
+			"Target means the more recent, alluding text.\n"
+			. "You may enter a single text or a comma-separated list; "
+			. "you can also match multiple texts by using the wildcard '*'.\n"
+			. "\n"
+			. "For example:\n"
+			. "   vergil.aeneid.part.*\n"
+			. "will match all books of the Aeneid.\n"
+			. "\n"
+			. "Type 'choices' to see a list of all texts in the corpus\n",
+			
+		unit =>
+			"Unit means the chunk of text used as the unit of matching.\n"
+			. "Select one or more options, separated by commas:\n"
+			. "  'line'   means search on verse line;\n"
+			. "  'phrase' means search on grammatical phrases, determined\n"
+			. "           by editorial punctuation marks.\n"
+			. "NB: If either work is prose, 'line' returns the same results as 'phrase'.\n",
+			
+		feature =>
+			"Feature means the textual characteristic on which similarity is judged.\n"
+			. "Select one or more options, separated by commas:\n"
+			. "  'word' will only return exact-word matches;\n"
+			. "  'stem' will match differently-inflected forms of the same headword;\n"
+			. "  'syn'  will attempt to match words having related meanings (v. buggy);\n"
+			. "  '3gr'  will match on common three-letter substrings\n",
+			
+		stop =>
+			"Stoplist size means the number of high-frequency words to exclude.\n"
+			. "Enter one or more integers, separated by commas; " 
+			. "you may also specify a range using the form 'start - end [: step]'\n"
+			. "\n"
+			. "For example:\n"
+			. "   1 - 10          is equivalent to 1,2,3,4,5,6,7,8,9,10\n"
+			. "  16 - 24 : 2      is equivalent to 16,18,20,22,24\n",
+			
+		stbasis =>
+			"Stoplist basis means the method for calculating high-frequency words.\n"
+			. "Select one or more options, separated by commas:\n"
+			. "  'target' takes the most frequent words in the target text;\n"
+			. "  'source' takes the most frequent words in the source text;\n"
+			. "  'both'   takes the most frequent words in both texts combined;\n"
+			. "  'corpus' takes the most frequent words in the entire corpus\n",
+			
+		dist =>
+			"Maximum Distance means the greatest distance across which a set of matching "
+			. "words may stretch within its unit. This can exclude 'sparse' matches.\n"
+			. "\n"
+			. "For example, the following matches across a distance of 4 in Lucan "
+			. "and 1 in Vergil:\n"
+			. "      Luc. BC.    1.477 AQUILAS collataque signa FERENTEM\n"
+			. "      Verg. Aen. 11.752 FERT AQUILA\n"
+			. "\n"
+			. "Enter one or more integers, separated by commas;\n" 
+			. "you may also specify a range using the form 'start - end [: step]', "
+			. "for example:\n"
+			. "   1 - 10          is equivalent to 1,2,3,4,5,6,7,8,9,10\n"
+			. "  16 - 24 : 2      is equivalent to 16,18,20,22,24\n",
+
+		dibasis =>
+			"Distance Metric means the method by which max distance is calculated "
+			. "in cases where more than two words match in each phrase.\n"
+			. "Select one or more options, separated by commas:\n"
+			. "  'span' takes the distance between the matching words that are furthest\n"
+			. "         apart in each phrase, adding the values for soure and target.\n"
+			. "  'freq' takes the distance between the two lowest-frequency matching words\n"
+			. "         in each phrase, adding the values together.  The idea here is to\n"
+			. "         try to zero in on the words most important to the intertext.\n"
+			. "  'span-target' uses the span in the target text only\n"
+			. "  'span-source' likewise, but in the source text only\n"
+			. "  'freq-target' uses the lowest frequency words in the target only\n"
+			. "  'freq-source' likewise, but in the source text only\n"
+	);
+	
+	my %choices = (
+	
+		source   => $all_texts,
+		target   => $all_texts,
+		unit     => [qw/line phrase/],
+		feature  => [qw/word stem syn 3gr/],  
+		stop     => ['any integer'],
+		stbasis  => [qw/target source both corpus/],
+		dist     => ['any integer'],
+		dibasis  => [qw/span span-target span-source freq freq-target freq-source/]
+	);
+	
+	my %name = (
+
+		source   => 'Source Text',
+		target   => 'Target Text',
+		unit     => 'Unit',
+		feature  => 'Feature',
+		stop     => 'Stoplist Size',
+		stbasis  => 'Stoplist Basis',
+		dist     => 'Maximum Distance',
+		dibasis  => 'Distance Metric'
+	);
+	
+	my %default = (
+	
+		unit     => 'line',
+		feature  => 'stem',
+		stop     => 10,
+		stbasis  => 'both',
+		dist     => 999,
+		dibasis  => 'freq'
+	);
+
+	#
 	# set up terminal interface
 	#
 
 	my $term = Term::ReadLine->new('myterm');
-
-	my @all = @{get_all_texts($lang)};
-	
+		
 	# prompt for source, target
 	
-	for my $dest (qw/source target/) {
-	
-		my $message = 'Choose source texts:';
-		my $prompt  = 'Select one or more texts by number: ';
-		
-		my %selected;
-		
-		for (@all) { $selected{$_} = 0 };
-		
-		my $done = 0;
-		
-		until ($done) {
+	for my $dest (@params) {
 
-			my @choices;
-			
-			for my $text (@all) {
-			
-				push @choices, ($selected{$text} ? '* ' : '') . $text;
-			}
-			
-			push @choices, 'Done';
-			
-			my @reply = $term->get_reply(
-					prompt   => $prompt,
-					print_me => $message,
-					choices  => \@choices,
-					default  => 'Done',
-					multi    => 1);
-			
-			for (@reply) {
-			
-				if (/^Done$/) {
+		my %options = (
+
+			print_me => 
+				$name{$dest} . ":\n"
+				. "Please enter one or more values.  Type 'choices' to see allowable\n"
+				. "options, 'help' for detailed instructions, or 'quit' to quit.\n",
 				
-					$done = 1;
+			prompt  => "$dest: "
+		);
+				
+		if ($default{$dest}) {
+		
+			$options{default} = $default{$dest};
+			
+			# for some reason a ':' is added by get_reply
+			# when there's a default, but not otherwise
+			
+			$options{prompt} =~ s/://;
+		}
+
+		until ($par{$dest}) {					
+	
+			my $reply = $term->get_reply(%options);
+			
+			next unless $reply;
+		
+			if ($reply =~ /^help/i) {
+			
+				print STDERR "\n";
+				print STDERR $help{$dest};
+			}
+			elsif ($reply =~ /^choices/i) {
+			
+				print STDERR "\n";
+				print STDERR "Choices for $dest:\n";
+			
+				if ($#{$choices{$dest}} > 6) {
+				
+					my $list;
+					
+					for (my $i = 0; $i < $#{$choices{$dest}}; $i++) {
+						
+						$list .= "  $choices{$dest}[$i]\n";
+						
+						if ($i+1 % 20 == 0) {
+						
+							print STDERR $list;
+							print STDERR '==more==';
+							<STDIN>;
+							print "\n";
+						}
+					}
+					
+					print $list;
 				}
 				else {
 				
-					s/^\*\s//;
-					
-					$selected{$_} = ! $selected{$_};
+					print STDERR "  " . join(', ', @{$choices{$dest}}) . "\n";
 				}
 			}
+			elsif ($reply =~ /^quit/i) {
+			
+				exit;
+			}
+			else {
+			
+				$par{$dest} = $reply;
+			}
+
+			print STDERR "\n";
 		}
-		
-		$par{$dest} = join(',', grep { $selected{$_} } @all);
 	}	
 }
 

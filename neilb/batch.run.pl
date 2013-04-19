@@ -556,9 +556,11 @@ sub add_scores {
 		"insert into scores values($i, ?, ?);"
 	);
 	
-	while (my ($score, $count) = each @scores) {
+	for (my $score = 0; $score <= $#scores; $score++) {
 	
-		$sth->execute($score, ($count || 0));
+		my $count = $scores[$score] || 0;
+	
+		$sth->execute($score, $count);
 	}
 }
 
