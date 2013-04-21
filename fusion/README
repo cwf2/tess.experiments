@@ -1,0 +1,20 @@
+Extra instructions for benchmark.features.pl
+
+I just noticed a couple of bugs in the current version of Tesserae's tf-idf script,
+'perl/benchmark/tess-idf.pl'.
+
+ - By default, it's not configured with the rest of Tesserae on install.  You need to
+   manually change the comment '# TESS_PATH' to read '# PERL_PATH' and then rerun
+   'configure.pl' to fix this.
+   
+ - By default, it creates the two td-idf score files in the wrong directory.  After running
+   'tess-idf.pl' you need to move
+   
+      data/la.idf_phrase
+      data/la.idf_text
+      
+   to
+   
+      data/common/
+      
+   
