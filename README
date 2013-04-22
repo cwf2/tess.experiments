@@ -1,3 +1,16 @@
 tess.experiments
 
 A collection of ongoing work that uses Tesserae to explore the nature of allusion.
+
+INSTALLATION
+
+To use these scripts, you must have Tesserae installed and configured on your system.
+(Exception: the 'synonymy' scripts require only the two XML dictionaries, not all of 
+Tesserae.)
+
+Create a file in the tess.experiments directory called '.tesserae.conf'.  This file should
+consist of a single line, giving the full path to the 'perl/' directory in your Tesserae 
+installation: i.e. the directory containing 'TessSystemVars.pm'.
+
+Each of the component projects may have its own further configuration--consult specific
+directions within the project directories.

@@ -15,9 +15,33 @@ batch.run.pl [options] FILE
 =head1 DESCRIPTION
 
 This script is meant to run a long list of Tesserae searches generated ahead of time by
-'batch.prepare.pl'.  It will write the results to a temporary directory, but the main 
-product is a digest containing only the number of results for each integer score, for
-use in Xia's visualizations.
+'batch.prepare.pl'.  Creates a new directory, by default called 'tesbatch.000' or 
+similar, in which are placed the following files:
+
+=over
+
+=item I<scores.txt>
+
+A table giving, for each Tesserae run, the number of results returned at each integer
+score.
+
+=item I<runs.txt>
+
+A second table giving, for each Tesserae run, all the search parameters used as well as
+the time in seconds taken by that run.
+
+=item I<sqlite.db>
+
+A SQLite database containing the above two tables.
+
+=item I<working/>
+
+A subdirectory containing the results of all the individual Tesserae runs.
+
+=back
+
+Note: if B<cleanup> is set to true (the default), everything but the first two text 
+files is deleted on completion.
 
 =head1 OPTIONS AND ARGUMENTS
 
@@ -25,7 +49,16 @@ use in Xia's visualizations.
 
 =item I<FILE>
 
-The file of searches to perform.  This is created by batch.prepare.pl.
+The file of searches to perform, having been created by 'batch.prepare.pl'.
+
+=item B<--dbname> I<NAME>
+
+Name of a directory in which to store output.  Default is 'tesbatch.NNN' where N is a 
+number.
+
+=item B<--no-cleanup>
+
+Don't delete working data, including all the individual Tesserae results.
 
 =item B<--parallel> I<N>
 
@@ -122,8 +155,8 @@ use Pod::Usage;
 # load additional modules necessary for this script
 
 use DBI;
-use File::Temp qw/tempdir/;
 use Storable;
+use File::Path qw/rmtree mkpath/;
 
 # initialize some variables
 
@@ -131,9 +164,10 @@ my $help     = 0;
 my $quiet    = 0;
 my $verbose  = 0;
 my $parallel = 0;
-my $cleanup  = 0;
-my $parentdir;
+my $cleanup  = 1;
+
 my $dbname;
+my $done;
 
 my @param_names = qw/
 	source
@@ -149,12 +183,11 @@ my @param_names = qw/
 
 GetOptions(
 	'cleanup'    => \$cleanup,
-	'dbname'     => \$dbname,
-	'help'       => \$help,	
+	'dbname=s'   => \$dbname,
+	'help'       => \$help,
 	'parallel=i' => \$parallel,
 	'quiet'      => \$quiet,
 	'verbose'    => \$verbose,
-	'working=s'  => \$parentdir
 	);
 
 # print usage if the user needs help
@@ -175,11 +208,6 @@ $quiet = 0 if $verbose;
 
 ($parallel, my $pm) = init_parallel($parallel);
 
-
-# choose a database name if necessary
-	
-$dbname = check_dbname($dbname);
-
 #
 # get file to read from command line
 #
@@ -195,12 +223,17 @@ my @run = @{parse_file($file)};
 # create database
 #
 
-($dbname, my ($datadir, $done)) = init_db($dbname, $parentdir);
+$dbname = check_dbname($dbname);
+$done = init_db($dbname);
 
+my $datadir = catdir($dbname, 'working');
+my $dbfile  = catfile($dbname, 'sqlite.db');
 
 #
 # main loop
 #
+
+print STDERR "Performing " . scalar(@run) . " Tesserae searches\n";
 
 my $pr = ProgressBar->new(scalar(@run), $quiet);
 
@@ -237,7 +270,7 @@ for (my $i = 0; $i <= $#run; $i++) {
 	# connect to database
 	#
 	
-	my $dbh = DBI->connect("dbi:SQLite:dbname=$dbname", "", "");
+	my $dbh = DBI->connect("dbi:SQLite:dbname=$dbfile", "", "");
 	
 	# add records to the database
 	
@@ -247,10 +280,30 @@ for (my $i = 0; $i <= $#run; $i++) {
 	
 	add_run($dbh, $i, $params, $time);
 	
+	$dbh->disconnect;
+	
 	$pm->finish if $parallel;
 }
 
 $pm->wait_all_children if $parallel;
+
+#
+# export data to text files
+#
+
+export_tables($dbname, "\t");
+
+#
+# remove working files
+#
+
+if ($cleanup) {
+
+	print STDERR "Cleaning up\n" unless $quiet;
+
+	rmtree($datadir);
+	unlink($dbfile);
+}
 
 #
 # subroutines
@@ -291,34 +344,6 @@ sub init_parallel {
 	return ($parallel, $pm);
 }
 
-#
-# choose a database name if none given
-#
-
-sub check_dbname {
-
-	my $dbname = shift;
-
-	unless ($dbname) {
-	
-		opendir (my $dh, curdir) or die "can't read current directory: $!";
-		
-		my @existing = sort (grep {/^tesbatch\.\d+\.db$/} readdir $dh);
-		
-		my $i = 0;
-		
-		if (@existing) {
-		
-			$existing[-1] =~ /\.(\d+)\.db/;
-			$i = $1 + 1;
-		}
-	
-		$dbname = sprintf("tesbatch.%03i.db", $i);
-		$dbname = abs_path(catfile(curdir, $dbname));
-	}
-	
-	return $dbname;
-}
 
 #
 # parse the input file
@@ -345,6 +370,49 @@ sub parse_file {
 	return \@run;
 }
 
+#
+# generate an output directory if none provided
+#
+
+sub check_dbname {
+
+	my $dbname = shift;
+	
+	unless ($dbname) {
+	
+		opendir (my $dh, curdir) or die "can't read current directory: $!";
+		
+		my @existing = sort (grep {/^tesbatch\.\d+$/} readdir $dh);
+		
+		my $i = 0;
+		
+		if (@existing) {
+		
+			$existing[-1] =~ /\.(\d+)/;
+			$i = $1 + 1;
+		}
+	
+		$dbname = sprintf("tesbatch.%03i", $i);
+		$dbname = abs_path(catfile(curdir, $dbname));
+		
+		mkpath($dbname);
+	}
+	else {
+
+		$dbname = File::Spec::Functions::rel2abs($dbname);
+	
+		if (-e $dbname and not -d $dbname) {
+	
+			print STDERR "$dbname already exists and is not a directory.\n";
+			print STDERR "Please choose a new name.\n";
+			exit;
+		}
+		
+		mkpath($dbname);
+	}
+
+	return $dbname;
+}
 
 #
 # create a new database
@@ -354,28 +422,29 @@ sub parse_file {
 
 sub init_db {
 
-	my ($dbname, $parentdir) = @_;
-	
+	my $dbname = shift;
 
 	#	
 	# open / create the database file
 	#
 	
-	my $dbh = DBI->connect("dbi:SQLite:dbname=$dbname", "", "");
+	my $dbfile = catfile($dbname, 'sqlite.db');
+	
+	my $dbh = DBI->connect("dbi:SQLite:dbname=$dbfile", "", "");
 		
 	my $done = check_resume($dbh);
 	
-
+	$dbh->disconnect;
+	
 	#
-	# create a temp directory for all the results
+	# create a working directory for all the tesserae results
 	#
 	
-	my %options = (CLEANUP => $cleanup);
-	if ($parentdir) { $options{DIR} = $parentdir }
-	
-	my $tempdir = tempdir(%options);
-	
-	return ($dbname, $tempdir, $done);
+	my $working = catdir($dbname, 'working');
+	rmtree($working);
+	mkpath($working);
+		
+	return ($done);
 }
 
 
@@ -594,4 +663,41 @@ sub add_quotes {
 	}
 	
 	return @_;
+}
+
+#
+# export the two tables to flat files
+#
+
+sub export_tables {
+
+	my ($dbname, $delim) = @_;
+	
+	my $dbfile = catfile($dbname, 'sqlite.db');
+	
+	my $dbh = DBI->connect("dbi:SQLite:dbname=$dbfile", "", "");
+
+	print STDERR "Exporting data\n" unless $quiet;
+	
+	for my $table (qw/runs scores/) {
+	
+		my $sth = $dbh->prepare("select * from $table;");
+		
+		$sth->execute;
+		
+		my $file = catfile($dbname, "$table.txt");
+		
+		open (FH, ">:utf8", $file) or die "can't write $file: $!";
+		
+		while (my $ref = $sth->fetchrow_arrayref) {
+		
+			my @row = @$ref;
+			
+			print FH join($delim, @row) . "\n";
+		}
+		
+		close FH;
+	}
+	
+	$dbh->disconnect;
 }
