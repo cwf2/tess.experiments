@@ -1,2 +1,6 @@
 # config file
 .tesserae.conf
+
+# vim files
+*.swp
+

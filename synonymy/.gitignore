@@ -1,0 +1,9 @@
+# dictionaries
+dict/*
+
+# binaries
+data/*
+
+# .pyc
+Tesserae/*.pyc
+

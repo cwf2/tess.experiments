@@ -7,7 +7,9 @@ from the similarity matrix are returned to STDOUT.
 
 Requires package 'gensim'.
 
-See README.txt for workflow details.
+See README for workflow details.
+
+ -- For Harry Diakoff.
 """
 
 import pickle
@@ -18,7 +20,7 @@ import codecs
 import unicodedata
 import argparse
 from gensim import corpora, models, similarities
-import progressbar
+from Tesserae import progressbar
 
 
 class SynPair:
@@ -287,7 +289,13 @@ def main():
 		sys.stderr.write('\r{}/{}'.format(pr._current, pr._total))
 		
 		recip_lookup(pair, link, simsdb, f)
-		f.write('{}\t{}\t{}\t{}\n'.format(pair, link.sim, link.ranka, link.rankb))
+		f.write('{}\t{}\t{}\t{}\t{}\n'.format(
+			pair, 
+			link.sim, 
+			link.ranka, 
+			link.rankb,
+			';'.join([str(synset) for synset in link.synsets])
+		))
 		f.flush()
 		
 	f.close()	
