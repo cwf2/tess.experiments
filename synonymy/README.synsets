@@ -1,0 +1,41 @@
+Comparison of Greek-Greek similarity scores with Harry Diakoff's Greek WordNet
+
+Background
+
+The goal of this project is to use Gensim to calculate similarity scores for every pair of synonymous words found in Harry's Greek synsets.  We hope that by comparing these two different methods for determining synonymy, we can work towards a more intelligent classification.
+
+Description of 'synset-check.py'
+
+The script 'synset-check.py' will read in a synset file, load the similarity data created by 'calc-matrix.pl', and then systematically check every pair of words that occurs together in any of the synsets.  It returns:
+
+   - the similarity between the two words
+   - the rank position of word B among results for word A
+   - the rank of A among results for B
+	
+Prerequisites
+
+The script was designed to work with Harry's file 'grcSSnew', or something of similar format, namely:
+
+   - one synset per line
+   - begins with <synset no="N">
+   - each Greek word enclosed in <grcword></grcword>
+    
+In addition, it requires that 'calc-matrix.py' have been run already, creating the data/ subdirectory (see README).
+
+Usage
+
+   synset-check.py grcSSnew
+   
+Known Bugs
+
+If I haven't fixed it by the time you read this, output is always written to the file 'test.results.txt'.  You ought to be able to specify your own output file.
+
+Also, on my 2009 Mac Mini, the script took about 36 hours to finish.  This should be improved by (a) adding support for parallel processing; and (b) running it on a better machine.  As a secondary measure I ought to (c) add support for resuming an aborted run.
+
+Contact
+
+If you have questions or want to help fix this, please send me an email: 
+
+   Chris Forstall <forstall@buffalo.edu>.  
+
+Thanks!

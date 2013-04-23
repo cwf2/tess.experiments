@@ -1,0 +1,104 @@
+Scripts for parsing Perseus' Greek and Latin Lexica
+
+About
+
+The goal of these scripts is to read the XML Greek-English and Latin-English dictionaries created by Perseus and link headwords based on the similarity of their English definitions.
+
+All of these scripts could use a lot of work, but they make a start on the problem of reading the XML dictionaries, organizing the English terms in the definitions by headword, and measuring headword-headword similarity based on the number of shared English terms.
+
+Installation
+
+The first thing to do is to download the two big dictionaries and move or link them to the dict/ subdirectory.  Latin should be downloaded from
+
+   http://tesserae.caset.buffalo.edu/data/common/lewis-short.xml 
+
+and saved as dict/la.lexicon.xml.  Greek should be downloaded from
+
+   http://tesserae.caset.buffalo.edu/data/common/lsj.xml
+
+and saved as dict/grc.lexicon.xml.
+
+Overview
+	
+	read-lexicon.pl        # parse the dictionaries
+	
+	export-corpus.pl       # export parsed data to a text file
+	
+	calc-matrix.py         # use gensim to calculate similarities
+	
+	test-similarities.py   # check similarities using test interface
+	
+Details
+	
+	1. read-lexicon.pl
+	
+	This script will attempt to parse the two dictionaries into definitions and headwords; and the definitions into individual English words.  The headwords are converted to a standardized orthography, which, among other things, flattens capitalization.  This means that some previously distinct headwords are collapsed; their definitions are concatenated.  Parsed dictionaries are saved as perl hashes, serialized and stored using the Storable module.  Creates the following:
+
+	data/LANG.full-def.cache
+		- a hash: keys are headwords, values are anonymous arrays of definitions.  Some of the xml has been stripped out, including bibliographic references and grammatical info.  Greek has been converted to unicode characters. 
+		
+	data/LANG.short-def.cache
+		- a hash: keys are headwords, values are anonymous arrays of definitions.  Here, only text appearing in a subset of XML tags has been kept.  The XML which seems to identify the English translation of the headword is different in the two dictionaries; you can see the patterns we search for in lines 104 and following of the script.  This might need to be made more inclusive to capture more useful English terms.
+		
+	data/LANG.head.map
+		- a hash: keys are headwords as they originally appeared in the dictionary; values are the standardized orthographic representation used everywhere in these scripts.
+	
+	Notes:
+		This script needs some work to catch cases where one dictionary entry doesn't have a definition but rather a redirect to a different entry.  It would be profitable to investigate the <xr> tags, which I think indicate internal cross-refs.  One reason I didn't delete all the tags from the full-defs at this stage was that I thought they might provide useful info for a second pass, in which short-defs for cross-referenced headwords could be copied over to the headwords that redirect to them.
+	
+	2. export-corpus.pl
+	
+	This turns the Storable binaries created by the previous script into plain text files to be read by the Python scripts run next.  The short defs are going to be the basis for the similarity calculations.  All the short defs for a single headword are concatenated and turned into a single bag of words.  English terms occurring in the definition of only one headword are eliminated at this stage. Creates the following
+	
+	dict/dict.flat.txt
+		- a text file containing all the bag-of-word short defs from both languages.  One headword per line, followed by all the words occurring in its defs (except hapax legomena).
+	
+	dict/full-defs.flat.txt
+		- a text file containing all the full-defs from both languages.  This is just for diagnostic purposes (used e.g. in the test-similarities script).
+		
+	Notes:
+		If you have the Perl module Lingua::Stem, use the -s flag for (I think) improved results.  This will run all the English terms through Lingua::Stem's English stemmer before building the dictionary, so that differently inflected English forms match.
+
+		At this point you might want to break out of the sequence of scripts and just calculate your own similarity matrix from the flat dictionary file.  I continue on using Python and in particular the "Gensim" package, but it's really just as an example.
+		
+	3. calc-matrix.py
+	
+	An example of how one might go about calculating headword similarities.  This script uses the Python package "Gensim" (http://radimrehurek.com/gensim/) to build a feature space using the English terms in the definitions, convert to TF-IDF weights, and calculate similarities between all the nodes.  To be honest, I don't totally know how all this works; it's adapted from examples in the Gensim tutorial online.  Create the following files:
+	
+	data/lookup_word.pickle
+		- a python dictionary: keys are headwords, values are numeric ids. Pickle binary.
+	
+	data/lookup_id.pickle
+		- a list: headwords in order by id.  Index of a word in this list is the value you'd get by looking up that word in the lookup_word dict above.
+				
+	data/gensim.corpus.mm
+		- the gensim tf-idf weighted corpus, saved in Market Matrix format
+		
+	data/gensim.index
+		- the similarity matrix, stored using gensim.similarities.Similarity
+		
+	4. test-similarities.py
+	
+	This diagnostic tool lets you query the similarity matrix build by calc-matrix.py and prints the top n hits, although with full-defs for the hits and the query word.  By default, it runs in interactive mode, requesting a query from STDIN.  Greek words are expected in unicode, with accents and breathing marks as in the dictionary.
+	
+	example:
+		At the query prompt, try typing in the following headwords
+			arma
+			λαμβάνω
+			uideo
+			ἐλαύνω
+			ἄνθρωπος
+			domus
+	
+	In entering queries, do not use capital letters.  Substitute i and u for j and v in all Latin headwords.  Substitute the acute accent for the grave in Greek.  Greek must be entered in UTF-8 encoding.
+	
+	Use the -n flag to set the number of results to return for each query.  Default is 25.
+	
+	You can also run this script on a text file containing a list of queries separated by newlines.  Use the --batch flag plus an argument giving the name of the file.  The same restrictions on orthography apply.
+	
+	example:
+		python test-similarities.py --batch QUERY_FILE -n 10 > RESULTS_FILE
+		
+	Notes:
+		I'm sorry this script in particular isn't very user friendly.  It basically assumes you know what headwords are in the dictionaries in the first place--queries that aren't in the dictionary produce no results.  What you need is a script to randomly generate queries by reading the dictionary; I made one of these once, but I can't find it right now and I don't have time to redo it.  That said, please email me <forstall@buffalo.edu> if you have any questions and I'll do my best to help you troubleshoot.  Of course please feel most welcome to fix or do over anything here.
+		
