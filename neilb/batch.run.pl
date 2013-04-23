@@ -278,7 +278,7 @@ for (my $i = 0; $i <= $#run; $i++) {
 	
 	# add run info
 	
-	add_run($dbh, $i, $params, $time);
+	add_run($dbh, $i, $params, units($params), $time);
 	
 	$dbh->disconnect;
 	
@@ -511,6 +511,9 @@ sub check_resume {
 			'stbasis char(7)',
 			'dist    int',
 			'dibasis char(11)',
+			'words   int',
+			'lines   int',
+			'phrases int',
 			'time    int');
 
 		$sth = $dbh->prepare(
@@ -640,19 +643,53 @@ sub add_scores {
 
 sub add_run {
 
-	my ($dbh, $i, $paramsref, $time) = @_;
+	my ($dbh, $i, $paramsref, $unitsref, $time) = @_;
 	
 	my @params = @$paramsref;
+	my @units  = @$unitsref;
 	
 	my $values = join(', ', add_quotes(
 		$i, 
-		@params, 
+		@params,
+		@units,
 		$time
 	));
 		
 	my $sth = $dbh->prepare("insert into runs values ($values);");
 	
 	$sth->execute;
+}
+
+# calculate the denominator to be used for unit normalization
+
+# note:
+# this would be better if it used param names instead of numbers
+
+sub units {
+
+	my $ref = shift;
+	my @params = @$ref;
+	
+	my @counts;
+	
+	for my $unit (qw/token line phrase/) {
+	
+		my $count = 1;
+		
+		for my $p (0, 1) {
+		
+			my $file = catfile($fs_data, 'v3', 'la', $params[$p], $params[$p]);
+			$file .= ".$unit";
+			
+			my @unit = @{retrieve($file)};
+			
+			$count *= scalar(@unit);
+		}
+		
+		push @counts, $count;
+	}
+	
+	return \@counts;
 }
 
 sub add_quotes {
@@ -679,6 +716,14 @@ sub export_tables {
 
 	print STDERR "Exporting data\n" unless $quiet;
 	
+	my %header = (
+	
+		runs => [qw/run_id 
+					source target unit feature stop stbasis dist dibasis
+					words lines phrases time/],
+		scores => [qw/run_id score count/]	
+	);
+	
 	for my $table (qw/runs scores/) {
 	
 		my $sth = $dbh->prepare("select * from $table;");
@@ -688,6 +733,8 @@ sub export_tables {
 		my $file = catfile($dbname, "$table.txt");
 		
 		open (FH, ">:utf8", $file) or die "can't write $file: $!";
+		
+		print FH join($delim, @{$header{$table}}) . "\n";
 		
 		while (my $ref = $sth->fetchrow_arrayref) {
 		
