@@ -26,7 +26,7 @@ Overview
 	
 	calc-matrix.py         # use gensim to calculate similarities
 	
-	test-similarities.py   # check similarities using test interface
+	sims-interactive.py    # check similarities using test interface
 	
 Details
 	

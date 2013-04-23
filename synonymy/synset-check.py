@@ -142,7 +142,7 @@ def parse_synsets(file, quiet):
 	"""parse a file of synsets"""
 	
 	if not quiet:
-		print 'Reading synsets from {}'.format(file)
+		print 'Reading synsets from {0}'.format(file)
 	
 	# a progress counter
 	
@@ -151,7 +151,7 @@ def parse_synsets(file, quiet):
 	try: 
 		f = codecs.open(file, encoding='utf_8')
 	except IOError as err:
-		print "can't read {}: {}".format(file, str(err))
+		print "can't read {0}: {1}".format(file, str(err))
 		return None
 		
 	# this dictionary holds links between heads
@@ -189,7 +189,7 @@ def parse_synsets(file, quiet):
 		for i in range(len(nodes)-1):
 			for j in range(i+1, len(nodes)):
 				
-				keypair = '{}->{}'.format(*sorted([nodes[i],nodes[j]]))
+				keypair = '{0}->{1}'.format(*sorted([nodes[i],nodes[j]]))
 				
 				# create a SynPair instance if one doesn't exist
 				
@@ -286,10 +286,10 @@ def main():
 	for pair, link in links.iteritems():
 	
 		pr.advance()
-		sys.stderr.write('\r{}/{}'.format(pr._current, pr._total))
+		sys.stderr.write('\r{0}/{1}'.format(pr._current, pr._total))
 		
 		recip_lookup(pair, link, simsdb, f)
-		f.write('{}\t{}\t{}\t{}\t{}\n'.format(
+		f.write('{0}\t{1}\t{2}\t{3}\t{4}\n'.format(
 			pair, 
 			link.sim, 
 			link.ranka, 

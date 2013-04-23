@@ -156,7 +156,7 @@ def main():
 		try: 
 			f = codecs.open(opt.batch, encoding='utf_8')
 		except IOError as err:
-			print "can't read {}: {}".format(file_batch, str(err))
+			print "can't read {0}: {1}".format(file_batch, str(err))
 		
 		for line in f:
 			q = line.split()[0]			
@@ -222,9 +222,10 @@ def get_results(q, n):
 			
 			r = by_id[r_id]
 						
-			print '{}\t{:.3f}  {}'.format(r.encode('utf8'), 
-			                              float(score), 
-			                              full_def[r].encode('utf8'))
+			print '{0}\t{1:.3f}  {2}'.format(
+				r.encode('utf8'), 
+				float(score), 
+				full_def[r].encode('utf8'))
 	else:	
 		
 		print q.encode('utf8') + ' is not indexed.'
