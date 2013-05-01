@@ -1,4 +1,4 @@
-#! /usr/bin/perl
+#!/usr/bin/env perl
 
 #
 # batch.prepare.pl - prepare a systematic set of tesserae searches
@@ -237,7 +237,7 @@ BEGIN {
 
 use lib $tesslib;
 
-use TessSystemVars;
+use Tesserae;
 use EasyProgressBar;
 
 # modules to read cmd-line options and print usage
@@ -389,7 +389,7 @@ for (my $i = 0; $i <= $#combi; $i++) {
 	
 	push @opt, ('--bin' => sprintf($format, $i));
 	
-	print $fh join(" ",	catfile($fs_cgi, "read_table.pl"), @opt) . "\n";
+	print $fh join(" ",	catfile($fs{cgi}, "read_table.pl"), @opt) . "\n";
 }
 
 
@@ -444,7 +444,9 @@ sub parse_params {
 	for (qw/source target/) {
 	
 		my @list;
-		my @all = @{get_all_texts($lang)};
+		my @all = @{Tesserae::get_textlist($lang, -sort=>1)};
+
+		for (@all) { print "$_\n"; }
 
 		for my $spec (@{$par{$_}}) {
 		
@@ -454,9 +456,7 @@ sub parse_params {
 			
 			push @list, (grep { /$spec/ } @all);
 		}
-		
-		@list = sort {text_sort($a, $b)} @{TessSystemVars::uniq(\@list)};
-		
+				
 		$par{$_} = \@list;
 	}
 }
@@ -471,7 +471,7 @@ sub get_all_texts {
 	
 	my @texts;
 	
-	my $dir = catdir($fs_data, 'v3', $lang);
+	my $dir = catdir($fs{data}, 'v3', $lang);
 
 	opendir (DH, $dir);
 
