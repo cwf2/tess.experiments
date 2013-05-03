@@ -446,8 +446,6 @@ sub parse_params {
 		my @list;
 		my @all = @{Tesserae::get_textlist($lang, -sort=>1)};
 
-		for (@all) { print "$_\n"; }
-
 		for my $spec (@{$par{$_}}) {
 		
 			$spec =~ s/\./\\./g;
@@ -740,7 +738,7 @@ sub interactive {
 							print STDERR $list;
 							print STDERR '==more==';
 							<STDIN>;
-							print "\n";
+							print STDERR "\n";
 						}
 					}
 					

@@ -144,7 +144,7 @@ BEGIN {
 
 use lib $tesslib;
 
-use TessSystemVars;
+use Tesserae;
 use EasyProgressBar;
 
 # modules to read cmd-line options and print usage
@@ -678,7 +678,7 @@ sub units {
 		
 		for my $p (0, 1) {
 		
-			my $file = catfile($fs_data, 'v3', 'la', $params[$p], $params[$p]);
+			my $file = catfile($fs{data}, 'v3', 'la', $params[$p], $params[$p]);
 			$file .= ".$unit";
 			
 			my @unit = @{retrieve($file)};
