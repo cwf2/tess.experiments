@@ -252,10 +252,10 @@ sub export_rows {
 	
 			for (1..5) {
 			
-				if (defined $tally{$cat}[$cutoff+1]) {
-					
-					$tally{$cat}[$cutoff][$_] += $tally{$cat}[$cutoff+1][$_];
-				}
+				$tally{$cat}[$cutoff][$_] +=
+				
+					defined $tally{$cat}[$cutoff+1] ? $tally{$cat}[$cutoff+1]
+						: 0;
 				
 				push @row_, $tally{$cat}[$cutoff][$_];
 			}			
