@@ -157,17 +157,18 @@ use Pod::Usage;
 use DBI;
 use Storable;
 use File::Path qw/rmtree mkpath/;
+use Data::Dumper;
 
 # initialize some variables
 
 my $help     = 0;
-my $quiet    = 0;
-my $verbose  = 0;
+my $verbose  = 1;
 my $parallel = 0;
 my $cleanup  = 1;
 
 my $dbname;
 my $done;
+my @plugin = qw/Runs/;
 
 my @param_names = qw/
 	source
@@ -182,31 +183,39 @@ my @param_names = qw/
 # get user options
 
 GetOptions(
-	'cleanup'    => \$cleanup,
+	'cleanup!'   => \$cleanup,
 	'dbname=s'   => \$dbname,
+	'plugin=s'   => \@plugin,
 	'help'       => \$help,
 	'parallel=i' => \$parallel,
-	'quiet'      => \$quiet,
-	'verbose'    => \$verbose,
+	'quiet'      => sub { $verbose = 0 },
+	'verbose'    => sub { $verbose++ }
 	);
 
 # print usage if the user needs help
-#
-# you could also use perldoc name.pl
 	
 if ($help) {
 
 	pod2usage(1);
 }
 
-# if verbose and quiet, verbose wins
+#
+# load plugin modules
+#
 
-$quiet = 0 if $verbose;
+use lib catdir($Bin, 'plugins');
 
+for my $plugin (@plugin) {
+
+	require $plugin . '.pm';
+}
+
+#
 # try to load Parallel::ForkManager
-#  if requested.
+#   - if requested.
 
 ($parallel, my $pm) = init_parallel($parallel);
+
 
 #
 # get file to read from command line
@@ -224,18 +233,19 @@ my @run = @{parse_file($file)};
 #
 
 $dbname = check_dbname($dbname);
-$done = init_db($dbname);
+init_db($dbname);
 
-my $datadir = catdir($dbname, 'working');
+my $datadir = catdir($dbname,  'working');
 my $dbfile  = catfile($dbname, 'sqlite.db');
+
 
 #
 # main loop
 #
 
-print STDERR "Performing " . scalar(@run) . " Tesserae searches\n";
+print STDERR "Performing " . scalar(@run) . " Tesserae searches\n" if $verbose;
 
-my $pr = ProgressBar->new(scalar(@run), $quiet);
+my $pr = ProgressBar->new(scalar(@run), ($verbose != 1));
 
 for (my $i = 0; $i <= $#run; $i++) {
 
@@ -255,16 +265,11 @@ for (my $i = 0; $i <= $#run; $i++) {
 	my $bin;
 	
 	$cmd =~ s/--bin\s+(\S+)/"--bin " . ($bin = catfile($datadir, $1))/e;
-	$cmd .= ' --quiet' unless $verbose;
+	$cmd .= ' --quiet' unless $verbose > 1;
 	
 	# run tesserae, note how long it took
 
-	my $time = exec_run($cmd, $verbose);
-	
-	# extract search params, score tallies
-	# from the results files
-	
-	my ($params, $scores) = parse_results($bin);
+	my $time = exec_run($cmd);
 	
 	#
 	# connect to database
@@ -272,13 +277,34 @@ for (my $i = 0; $i <= $#run; $i++) {
 	
 	my $dbh = DBI->connect("dbi:SQLite:dbname=$dbfile", "", "");
 	
-	# add records to the database
+	# load tesserae data from the results files
 	
-	add_scores($dbh, $i, $scores);
+	my ($meta, $target, $source, $score) = parse_results($bin);
+		
+	#
+	# process all plugins
+	#
 	
-	# add run info
+	for my $plugin (@plugin) {
+		
+		print STDERR "Processing $plugin\n" if $verbose > 1;
 	
-	add_run($dbh, $i, $params, units($params), $time);
+		my %opt = (
+		
+			run_id      => $i,
+			bin         => $bin,
+			target      => $target,
+			source      => $source,
+			meta        => $meta,
+			score       => $score,
+			param_names => \@param_names,
+			dbh         => $dbh, 
+			time        => $time,
+			verbose     => $verbose
+		);
+			
+		$plugin->process(%opt);
+	}
 	
 	$dbh->disconnect;
 	
@@ -299,7 +325,7 @@ export_tables($dbname, "\t");
 
 if ($cleanup) {
 
-	print STDERR "Cleaning up\n" unless $quiet;
+	print STDERR "Cleaning up\n" if $verbose;
 
 	rmtree($datadir);
 	unlink($dbfile);
@@ -357,7 +383,7 @@ sub parse_file {
 	
 	open(my $fh, "<", $file) or die "can't read $file: $!";
 	
-	print STDERR "reading $file\n" unless $quiet;
+	print STDERR "reading $file\n" if $verbose;
 	
 	while (my $l = <$fh>) {
 	
@@ -417,8 +443,6 @@ sub check_dbname {
 #
 # create a new database
 #
-#   NOTE: - if it exists already, do something else?
-#
 
 sub init_db {
 
@@ -431,8 +455,15 @@ sub init_db {
 	my $dbfile = catfile($dbname, 'sqlite.db');
 	
 	my $dbh = DBI->connect("dbi:SQLite:dbname=$dbfile", "", "");
-		
-	my $done = check_resume($dbh);
+	
+	my %cols = ();
+	
+	for my $plugin (@plugin) {
+
+		%cols = (%cols, $plugin->cols);
+	}
+	
+	init_tables($dbh, %cols);
 	
 	$dbh->disconnect;
 	
@@ -443,17 +474,15 @@ sub init_db {
 	my $working = catdir($dbname, 'working');
 	rmtree($working);
 	mkpath($working);
-		
-	return ($done);
 }
 
 
-# check database tables to see whether
-# an aborted run must be resumed (and where)
+# figure out what tables are necessary
+# and create them in the database
 
-sub check_resume {
+sub init_tables {
 
-	my $dbh = shift;
+	my ($dbh, %cols) = @_;
 	
 	my %done;
 	
@@ -467,74 +496,12 @@ sub check_resume {
 	foreach(@{$sth->fetchall_arrayref()}) {
 		$exists{$_} = 1;
 	}
-	
-	# if both tables are present, figure out 
-	# how much has already been done
 		
-	if ($exists{runs} and $exists{scores}) {
-		
-		my $sth = $dbh->prepare ('select run_id from runs;');
-		$sth->execute;
-		
-		foreach(@{$sth->fetchall_arrayref()}) {
-			$done{$_} = 1;
-		}
-	}
+	# init
 
-	# otherwise create them;
-	#   - if only one exists, delete it and start over.
-
-	else {
+	for my $table (keys %cols) {
 		
-		if ($exists{runs}) {
-		
-			my $sth = $dbh->prepare('drop table runs;');
-			$sth->execute;
-		}
-		elsif ($exists{scores}) {
-			my $sth = $dbh->prepare('drop table scores;');
-			$sth->execute;
-		}
-	
-		my $sth;
-		my $cols;
-		
-		# create table runs
-		
-		$cols = join(', ', 
-			'run_id  int',
-			'source  varchar(80)',
-			'target  varchar(80)',
-			'unit    char(6)',
-			'feature char(4)',
-			'stop    int',
-			'stbasis char(7)',
-			'dist    int',
-			'dibasis char(11)',
-			'words   int',
-			'lines   int',
-			'phrases int',
-			'time    int');
-
-		$sth = $dbh->prepare(
-			"create table runs ($cols);"
-		);
-		
-		$sth->execute;
-		
-		# create table scores
-		
-		$cols = join(', ', 
-			'run_id int',
-			'score  int',
-			'count  int'
-		);	
-	
-		$sth = $dbh->prepare(
-			"create table scores ($cols);"
-		);	
-		
-		$sth->execute;
+		create_table($dbh, $table, $cols{$table}, $exists{$table});
 	}
 	
 	return \%done;
@@ -567,9 +534,9 @@ sub params_from_string {
 
 sub exec_run {
 
-	my ($cmd, $echo) = @_;
+	my $cmd = shift;
 	
-	print STDERR $cmd . "\n" if $echo;
+	print STDERR $cmd . "\n" if $verbose > 1;
 	
 	my $bmtext = `$cmd`;
 	
@@ -590,116 +557,17 @@ sub parse_results {
 	# get parameters
 	
 	my $file_meta = catfile($bin, 'match.meta');
-	
-	my %meta = %{retrieve($file_meta)};
-	
-	my @params = @meta{map {uc($_)} @param_names};
-	
-	# get score tallies
-
-	my @scores;
+	my $meta = retrieve($file_meta);
 	
 	my $file_score = catfile($bin, 'match.score');
+	my $score = retrieve($file_score);
 	
-	my %score = %{retrieve($file_score)};
-
-	for my $unit_id_target (keys %score) {
+	# might use these later
 	
-		for my $unit_id_source (keys %{$score{$unit_id_target}}) {
+	my $target;
+	my $source;
 		
-			$scores[$score{$unit_id_target}{$unit_id_source}]++;
-		}
-	}
-	
-	return (\@params, \@scores);
-}
-
-#
-# add scores to database
-#
-
-sub add_scores {
-
-	my ($dbh, $i, $scoresref) = @_;
-	
-	my @scores = @$scoresref;
-	
-	my $sth = $dbh->prepare(
-		"insert into scores values($i, ?, ?);"
-	);
-	
-	for (my $score = 0; $score <= $#scores; $score++) {
-	
-		my $count = $scores[$score] || 0;
-	
-		$sth->execute($score, $count);
-	}
-}
-
-
-#
-# add run info to database
-#
-
-sub add_run {
-
-	my ($dbh, $i, $paramsref, $unitsref, $time) = @_;
-	
-	my @params = @$paramsref;
-	my @units  = @$unitsref;
-	
-	my $values = join(', ', add_quotes(
-		$i, 
-		@params,
-		@units,
-		$time
-	));
-		
-	my $sth = $dbh->prepare("insert into runs values ($values);");
-	
-	$sth->execute;
-}
-
-# calculate the denominator to be used for unit normalization
-
-# note:
-# this would be better if it used param names instead of numbers
-
-sub units {
-
-	my $ref = shift;
-	my @params = @$ref;
-	
-	my @counts;
-	
-	for my $unit (qw/token line phrase/) {
-	
-		my $count = 1;
-		
-		for my $p (0, 1) {
-		
-			my $file = catfile($fs{data}, 'v3', 'la', $params[$p], $params[$p]);
-			$file .= ".$unit";
-			
-			my @unit = @{retrieve($file)};
-			
-			$count *= scalar(@unit);
-		}
-		
-		push @counts, $count;
-	}
-	
-	return \@counts;
-}
-
-sub add_quotes {
-
-	for (@_) {
-	
-		$_ = "'$_'" if /[a-z]/i;
-	}
-	
-	return @_;
+	return ($meta, $target, $source, $score);
 }
 
 #
@@ -714,37 +582,57 @@ sub export_tables {
 	
 	my $dbh = DBI->connect("dbi:SQLite:dbname=$dbfile", "", "");
 
-	print STDERR "Exporting data\n" unless $quiet;
+	print STDERR "Exporting data\n" if $verbose;
+		
+	for my $plugin (@plugin){
+		my %cols = $plugin->cols;
+		
+		for my $table (keys %cols) {
 	
-	my %header = (
-	
-		runs => [qw/run_id 
-					source target unit feature stop stbasis dist dibasis
-					words lines phrases time/],
-		scores => [qw/run_id score count/]	
-	);
-	
-	for my $table (qw/runs scores/) {
-	
-		my $sth = $dbh->prepare("select * from $table;");
+			my $sth = $dbh->prepare("select * from $table;");
 		
-		$sth->execute;
+			$sth->execute;
 		
-		my $file = catfile($dbname, "$table.txt");
+			my $file = catfile($dbname, "$table.txt");
 		
-		open (FH, ">:utf8", $file) or die "can't write $file: $!";
-		
-		print FH join($delim, @{$header{$table}}) . "\n";
-		
-		while (my $ref = $sth->fetchrow_arrayref) {
-		
-			my @row = @$ref;
+			open (FH, ">:utf8", $file) or die "can't write $file: $!";
 			
-			print FH join($delim, @row) . "\n";
-		}
+			my @head = @{$cols{$table}};
+			
+			for (@head) {
+				s/\s.*//;
+			}
 		
-		close FH;
+			print FH join($delim, @head) . "\n";
+		
+			while (my $ref = $sth->fetchrow_arrayref) {
+		
+				my @row = @$ref;
+			
+				print FH join($delim, @row) . "\n";
+			}
+		
+			close FH;
+		}
 	}
 	
 	$dbh->disconnect;
+}
+
+sub create_table {
+
+	my ($dbh, $table, $cols, $exists) = @_;
+	
+	my $sth;
+	
+	if ($exists) {
+	
+		$sth = $dbh->prepare("drop table $table;");
+		$sth->execute;
+	}
+	
+	$sth = $dbh->prepare(
+		"create table $table (" . join(",", @$cols) . ");"
+	);
+	$sth->execute;
 }
