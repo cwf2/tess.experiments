@@ -328,7 +328,7 @@ if ($cleanup) {
 	print STDERR "Cleaning up\n" if $verbose;
 
 	rmtree($datadir);
-	unlink($dbfile);
+	# unlink($dbfile);
 }
 
 #

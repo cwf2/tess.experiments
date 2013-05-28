@@ -154,34 +154,27 @@ sub call_append_bench_scores {
 		# skip all parallels not annotated for type
 		
 		next if $field{type} eq 'NA';
-	
-		# commentator parallels
+
+		# tally all found by tesserae
+
+		if ($field{score} ne 'NA') {
+
+			$tally{tess}[int($field{score})][$field{type}]++;
+		}
+		
+		# tally commentator parallels
 		
 		if ($field{auth} ne 'NA') {
-			
-			# tally commentator parallels
-			
+						
 			$tally{auth}[$field{type}]++;
 			$tally{auth}[0]++;
 			
-			# did tesserae find it?
+			# did tess find it too?
 
 			if ($field{score} ne 'NA') {
 
 				$tally{both}[int($field{score})][$field{type}]++;
-			}
-		}
-		
-		# non-commentator parallels
-		
-		else {
-		
-			# did tesserae find it?
-
-			if ($field{score} ne 'NA') {
-
-				$tally{tess}[int($field{score})][$field{type}]++;
-			}
+			}	
 		}
 	}
 
@@ -254,7 +247,7 @@ sub export_rows {
 			
 				$tally{$cat}[$cutoff][$_] +=
 				
-					defined $tally{$cat}[$cutoff+1] ? $tally{$cat}[$cutoff+1]
+					defined $tally{$cat}[$cutoff+1] ? $tally{$cat}[$cutoff+1][$_]
 						: 0;
 				
 				push @row_, $tally{$cat}[$cutoff][$_];
