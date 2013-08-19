@@ -6,12 +6,12 @@ import sys
 
 class ProgressBar:
 	def __init__(self, value, quiet=0):
-		self._total   = value
-		self._quiet   = quiet 
-		self._prev    = 0
+		self._total = value
+		self._quiet = quiet 
+		self._prev = 0
 		self._current = 0
-		self.done    = 0
-		self._prec    = 0.0001
+		self.done = 0
+		self._prec = 0.0001
 	
 	def advance(self, step=1):
 		self._current = self._current + step
