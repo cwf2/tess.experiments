@@ -16,7 +16,6 @@ import codecs
 import pickle
 import collections
 import argparse
-import tempfile
 import unicodedata
 
 from stemming.porter2 import stem
@@ -228,7 +227,7 @@ def parse_XML_dictionaries(langs, quiet):
 	return(defs)
 
 
-def bag_of_words(defs, stem, quiet):
+def bag_of_words(defs, stem_flag, quiet):
 	'''convert dictionary definitions into bags of words'''
 	
 	# convert to bag of words, count words
@@ -248,8 +247,8 @@ def bag_of_words(defs, stem, quiet):
 		defs[lemma] = [standardize('any', w) 
 							for w in pat.clean['any'].split(defs[lemma]) 
 							if not w.isspace() and w != '']
-		
-		if stem:
+				
+		if stem_flag:
 			defs[lemma] = [stem(w) for w in defs[lemma]]
 		
 		if len(defs[lemma]) > 0:
@@ -459,9 +458,9 @@ def main():
 	if not opt.quiet:
 		print 'Calculating similarities (please be patient)'
 	
-	temp_dir = os.path.join(tempfile.gettempdir(), 'sims')
+	dir_calc = os.path.join('data', 'sims')
 	
-	index = similarities.Similarity(temp_dir, corpus_final, len(corpus_final))
+	index = similarities.Similarity(dir_calc, corpus_final, len(corpus_final))
 	
 	file_index = os.path.join('data', 'gensim.index')
 	
